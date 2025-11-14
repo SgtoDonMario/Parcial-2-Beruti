@@ -9,7 +9,7 @@ public class PlayerMovement : MonoBehaviour
     private Vector3 moveDirection;
 
     [Header("Agacharse")]
-    public float crouchHeightMultiplier = 0.5f;
+    public float crouchHeightMultiplier = 2f;
     public float crouchSpeedMultiplier = 0.75f;
     private bool isCrouched = false;
     private float originalHeight;
@@ -19,7 +19,11 @@ public class PlayerMovement : MonoBehaviour
     public Transform playerCamera;
     public float mouseSensitivity = 2f;
 
-    private float mouseX;
+    [Header("Gravedad")]
+    public float gravity = -9.81f;
+    public float groundCheckDistance = 0.2f;
+    private Vector3 velocity;
+    private bool isGrounded;
 
     void Start()
     {
@@ -40,18 +44,27 @@ public class PlayerMovement : MonoBehaviour
 
     void HandleMovement()
     {
+        // Comprobamos si está tocando el suelo
+        isGrounded = controller.isGrounded;
+
+        // Si está en el suelo, mantenemos una pequeña velocidad hacia abajo
+        if (isGrounded && velocity.y < 0)
+            velocity.y = -2f;
+
         float horizontal = Input.GetAxis("Horizontal");
         float vertical = Input.GetAxis("Vertical");
 
         Vector3 move = transform.right * horizontal + transform.forward * vertical;
         controller.Move(move * currentSpeed * Time.deltaTime);
+
+        // Aplicar gravedad manualmente
+        velocity.y += gravity * Time.deltaTime;
+        controller.Move(velocity * Time.deltaTime);
     }
 
     void HandleCamera()
     {
-        mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
-
-        // Solo rotar el jugador (Y)
+        float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
         transform.Rotate(Vector3.up * mouseX);
     }
 

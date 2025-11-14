@@ -24,6 +24,13 @@ public class Projectile : MonoBehaviour
             enemy.TakeDamage(50f);
         }
 
+        SecurityCamera cam = collision.gameObject.GetComponent<SecurityCamera>();
+        if (cam != null)
+        {
+            cam.TakeDamage(damage);
+        }
+
+
         Destroy(gameObject);
 
     }

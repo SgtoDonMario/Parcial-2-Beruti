@@ -11,7 +11,7 @@ public class PlayerWeapon : MonoBehaviour
     public float fireRate = 0.2f;
     private float nextFireTime = 0f;
 
-    [Header("Munici�n")]
+    [Header("Municion")]
     public int magazineSize = 15;
     public int currentAmmo;
     public int extraMagazines = 1;
