@@ -14,4 +14,5 @@ public class PlayerUI : MonoBehaviour
             ammoText.text = weapon.currentAmmo + "/" + weapon.extraMagazines;
         }
     }
+
 }

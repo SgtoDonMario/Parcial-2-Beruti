@@ -6,13 +6,13 @@ public class PlayerMovement : MonoBehaviour
     [Header("Movimiento")]
     public float walkSpeed = 5f;
     private float currentSpeed;
-    private Vector3 moveDirection;
 
-    [Header("Agacharse")]
-    public float crouchHeightMultiplier = 2f;
+    [Header("Agacharse (Nuevo sistema por escala)")]
+    public float crouchScale = 0.5f;      // Escala al 50%
     public float crouchSpeedMultiplier = 0.75f;
     private bool isCrouched = false;
-    private float originalHeight;
+    private Vector3 originalScale;
+
     private CharacterController controller;
 
     [Header("Cámara")]
@@ -21,15 +21,16 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("Gravedad")]
     public float gravity = -9.81f;
-    public float groundCheckDistance = 0.2f;
     private Vector3 velocity;
+
     private bool isGrounded;
 
     void Start()
     {
         controller = GetComponent<CharacterController>();
         currentSpeed = walkSpeed;
-        originalHeight = controller.height;
+
+        originalScale = transform.localScale;
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
@@ -44,10 +45,8 @@ public class PlayerMovement : MonoBehaviour
 
     void HandleMovement()
     {
-        // Comprobamos si está tocando el suelo
         isGrounded = controller.isGrounded;
 
-        // Si está en el suelo, mantenemos una pequeña velocidad hacia abajo
         if (isGrounded && velocity.y < 0)
             velocity.y = -2f;
 
@@ -57,7 +56,6 @@ public class PlayerMovement : MonoBehaviour
         Vector3 move = transform.right * horizontal + transform.forward * vertical;
         controller.Move(move * currentSpeed * Time.deltaTime);
 
-        // Aplicar gravedad manualmente
         velocity.y += gravity * Time.deltaTime;
         controller.Move(velocity * Time.deltaTime);
     }
@@ -68,25 +66,38 @@ public class PlayerMovement : MonoBehaviour
         transform.Rotate(Vector3.up * mouseX);
     }
 
+    // -------------------------------------------
+    // NUEVO SISTEMA DE AGACHADO POR ESCALA
+    // -------------------------------------------
     void HandleCrouch()
     {
         if (Input.GetKeyDown(KeyCode.C) || Input.GetKeyDown(KeyCode.LeftControl))
+        {
             ToggleCrouch();
+        }
     }
 
     void ToggleCrouch()
     {
-        if (isCrouched)
+        if (!isCrouched)
         {
-            controller.height = originalHeight;
-            currentSpeed = walkSpeed;
-            isCrouched = false;
-        }
-        else
-        {
-            controller.height = originalHeight * crouchHeightMultiplier;
+            // AGACHAR
+            transform.localScale = new Vector3(
+                originalScale.x,
+                originalScale.y * crouchScale,
+                originalScale.z
+            );
+
             currentSpeed = walkSpeed * crouchSpeedMultiplier;
             isCrouched = true;
         }
+        else
+        {
+            // LEVANTAR
+            transform.localScale = originalScale;
+            currentSpeed = walkSpeed;
+            isCrouched = false;
+        }
     }
 }
+

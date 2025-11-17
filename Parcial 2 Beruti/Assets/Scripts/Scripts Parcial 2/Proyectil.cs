@@ -2,9 +2,13 @@ using UnityEngine;
 
 public class Projectile : MonoBehaviour
 {
+    [Header("Ajustes")]
     public float speed = 40f;
     public float lifetime = 3f;
     public float damage = 10f;
+
+    [Header("Opcional - Quién disparó")]
+    public GameObject owner; // Jugador o enemigo
 
     private Rigidbody rb;
 
@@ -12,26 +16,47 @@ public class Projectile : MonoBehaviour
     {
         rb = GetComponent<Rigidbody>();
         rb.useGravity = false;
+
+        // El proyectil viaja directamente hacia adelante
         rb.linearVelocity = transform.forward * speed;
+
+        // Se autodestruye
         Destroy(gameObject, lifetime);
     }
 
-    void OnCollisionEnter(Collision collision)
+    private void OnTriggerEnter(Collider other)
     {
-        EnemyController enemy = collision.gameObject.GetComponent<EnemyController>();
+        // Ignorar colisiones con quien lo disparó
+        if (other.gameObject == owner) return;
+
+        // Daño a enemigos
+        EnemyController enemy = other.GetComponent<EnemyController>();
         if (enemy != null)
         {
-            enemy.TakeDamage(50f);
+            enemy.TakeDamage(damage);
+            Destroy(gameObject);
+            return;
         }
 
-        SecurityCamera cam = collision.gameObject.GetComponent<SecurityCamera>();
+        // Daño al jugador
+        PlayerHealth player = other.GetComponent<PlayerHealth>();
+        if (player != null)
+        {
+            player.TakeDamage(damage);
+            Destroy(gameObject);
+            return;
+        }
+
+        // Daño a cámaras u otros objetos
+        SecurityCamera cam = other.GetComponent<SecurityCamera>();
         if (cam != null)
         {
             cam.TakeDamage(damage);
+            Destroy(gameObject);
+            return;
         }
 
-
+        // Si pega en otra cosa (paredes, suelo)
         Destroy(gameObject);
-
     }
 }

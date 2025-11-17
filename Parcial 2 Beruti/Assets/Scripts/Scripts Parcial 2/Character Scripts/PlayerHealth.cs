@@ -7,10 +7,15 @@ public class PlayerHealth : MonoBehaviour
     [Header("Salud")]
     public float maxHealth = 100f;
     public float currentHealth;
+    public bool isDead = false;
 
     [Header("Referencias UI")]
     public Image healthBarFill;
     public TextMeshProUGUI healthText;
+
+    [Header("Referencias del Jugador")]
+    public GameObject playerModel;  // La cápsula o el mesh del jugador
+    public GameObject playerGun;    // El arma del jugador
 
     void Start()
     {
@@ -18,30 +23,67 @@ public class PlayerHealth : MonoBehaviour
         UpdateHealthUI();
     }
 
-    void Update()
+    public void ResetHealth()
     {
-        // 🔹 Simular daño al presionar H
-        if (Input.GetKeyDown(KeyCode.H))
-        {
-            TakeDamage(10f); // Resta 10 puntos de vida
-        }
+        currentHealth = maxHealth;
+        isDead = false;
 
-        // 🔹 (Opcional) Curar al presionar J
-        if (Input.GetKeyDown(KeyCode.J))
-        {
-            Heal(10f);
-        }
+        // Reaparecer modelo
+        if (playerModel != null)
+            playerModel.SetActive(true);
+
+        // Reactivar movimiento
+        GetComponent<PlayerMovement>().enabled = true;
+
+        // Reactivar arma
+        if (playerGun != null)
+            playerGun.SetActive(true);
+
+        UpdateHealthUI();
     }
+
 
     public void TakeDamage(float amount)
     {
+        if (isDead) return;
+
         currentHealth -= amount;
         currentHealth = Mathf.Clamp(currentHealth, 0, maxHealth);
         UpdateHealthUI();
+
+        Debug.Log($"[PLAYER DAMAGE] - Daño recibido: {amount}  |  Vida restante: {currentHealth}");
+
+        if (currentHealth <= 0)
+            Die();
+    }
+
+
+    void Die()
+    {
+        isDead = true;
+
+        // Desactivar movimiento
+        GetComponent<PlayerMovement>().enabled = false;
+
+        // Ocultar cápsula o modelo
+        if (playerModel != null)
+            playerModel.SetActive(false);
+
+        // Desactivar arma visual y script
+        if (playerGun != null)
+            playerGun.SetActive(false);
+
+        PlayerWeapon weapon = GetComponent<PlayerWeapon>();
+        if (weapon != null)
+            weapon.enabled = false;
+
+        Debug.Log("Jugador muerto");
     }
 
     public void Heal(float amount)
     {
+        if (isDead) return;
+
         currentHealth += amount;
         currentHealth = Mathf.Clamp(currentHealth, 0, maxHealth);
         UpdateHealthUI();

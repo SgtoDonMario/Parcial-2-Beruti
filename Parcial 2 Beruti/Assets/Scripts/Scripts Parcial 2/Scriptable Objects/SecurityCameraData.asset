@@ -10,12 +10,18 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: dfc8ee2738c2af74195c695cd4297c59, type: 3}
-  m_Name: Camara
+  m_Name: SecurityCameraData
   m_EditorClassIdentifier: 
+  maxHealth: 100
+  rotationSpeed: 30
+  rotationAngle: 90
+  pauseTime: 1.5
   visionDistance: 10
   visionAngle: 60
-  rotationSpeed: 30
-  leftLimit: -45
-  rightLimit: 45
-  pauseTime: 1
-  alertDelay: 0.2
+  obstacleMask:
+    serializedVersion: 2
+    m_Bits: 0
+  playerMask:
+    serializedVersion: 2
+    m_Bits: 0
+  uiOffset: {x: 0, y: 1.5, z: 0}

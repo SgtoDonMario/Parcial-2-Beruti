@@ -5,113 +5,226 @@ public class EnemyController : MonoBehaviour
 {
     public enum EnemyState { Patrol, Alert, Chase, Damage, Dead }
     public EnemyState currentState = EnemyState.Patrol;
+    public Transform weapon;      // referencia al arma del enemigo
+    public CharacterController playerController;
 
     [Header("Referencias")]
     public EnemyData enemyData;
     public Transform player;
     public TextMeshPro statusText;
 
+    [Header("Patrulla")]
+    public Transform patrolPointA;
+    public Transform patrolPointB;
+    public float patrolSpeed = 2f;
+    private Transform patrolTarget;
+
+    [Header("Ataque a distancia")]
+    public GameObject projectilePrefab;
+    public Transform firePoint;
+    public float shootRange = 10f;
+    public float fireRate = 1f;
+    public float projectileDamage = 10f;
+
+    private float nextFireTime = 0f;
+
     [Header("IA")]
     public LayerMask obstacleMask;
     public LayerMask playerMask;
 
+    [Header("Physics / Ajustes")]
+    public float rbMass = 300f;
+    public float avoidanceDistance = 0.6f;
+    public float lateralCheckDistance = 1.0f;
+    public float stopDistance = 2f;
+    public float maxChaseSpeed = 3f;
+
     private float currentHealth;
     private bool dying = false;
-    private bool alerted = false;
     private float lastDamageTime;
 
     private Rigidbody enemyRb;
     private Vector3 fixedMoveDelta = Vector3.zero;
-    private Vector3 uiOffset = new Vector3(0, 2f, 0); // 🔹 altura del cartel
+    private Vector3 uiOffset = new Vector3(0, 2f, 0);
+
+    private float destinationUpdateTimer = 0f;
 
     void Start()
     {
         enemyRb = GetComponent<Rigidbody>();
-        if (enemyRb == null)
-            enemyRb = gameObject.AddComponent<Rigidbody>();
+        if (enemyRb == null) enemyRb = gameObject.AddComponent<Rigidbody>();
 
-        // 🔹 No queremos física real, solo control manual
         enemyRb.useGravity = false;
-        enemyRb.isKinematic = true;
+        enemyRb.isKinematic = false;
         enemyRb.constraints = RigidbodyConstraints.FreezeRotation;
-
+        enemyRb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+        enemyRb.interpolation = RigidbodyInterpolation.Interpolate;
+        enemyRb.mass = rbMass;
+        patrolTarget = patrolPointB; // empieza yendo hacia B
         currentHealth = enemyData != null ? enemyData.maxHealth : 100f;
+
+        if (player == null)
+        {
+            var p = GameObject.FindGameObjectWithTag("Player");
+            if (p != null) player = p.transform;
+        }
+
+        if (statusText != null)
+            statusText.text = currentState.ToString();
     }
 
     void Update()
     {
         UpdateBillboard();
-
         if (dying) return;
 
         switch (currentState)
         {
             case EnemyState.Patrol:
+                PatrolLogic();    // NUEVO
                 DetectPlayer();
                 fixedMoveDelta = Vector3.zero;
                 break;
-
             case EnemyState.Alert:
+            case EnemyState.Damage:
                 DetectPlayer();
                 fixedMoveDelta = Vector3.zero;
                 break;
 
             case EnemyState.Chase:
-                CalculateChaseMovement();
-                break;
-
-            case EnemyState.Damage:
-                DetectPlayer();
-                fixedMoveDelta = Vector3.zero;
+                ChaseLogic();
                 break;
         }
+
+        AimWeaponAtPlayer();
+
+    }
+
+    void AimWeaponAtPlayer()
+    {
+        if (weapon != null && player != null && playerController != null)
+        {
+            float eyeHeight = playerController.height * 0.35f;
+            Vector3 targetPoint = player.position + Vector3.up * eyeHeight;
+            weapon.LookAt(targetPoint);
+        }
+    }
+
+    // ---------------------------------
+    //          PATRULLA
+    // ---------------------------------
+    void PatrolLogic()
+    {
+        if (patrolPointA == null || patrolPointB == null) return;
+
+        // Dirección hacia el objetivo actual
+        Vector3 direction = patrolTarget.position - transform.position;
+        direction.y = 0f;
+
+        // Rotación suave
+        if (direction.sqrMagnitude > 0.01f)
+        {
+            Quaternion rot = Quaternion.LookRotation(direction.normalized);
+            transform.rotation = Quaternion.Slerp(transform.rotation, rot, 3f * Time.deltaTime);
+        }
+
+        // Movimiento lineal (vector math)
+        transform.position += direction.normalized * patrolSpeed * Time.deltaTime;
+
+        // Si llegó al punto, cambiar destino
+        if (Vector3.Distance(transform.position, patrolTarget.position) < 3f)
+            {
+            patrolTarget = (patrolTarget == patrolPointA) ? patrolPointB : patrolPointA;
+        }
+    }
+    void HandleShooting()
+    {
+        if (player == null) return;
+
+        // Distancia al jugador
+        float distance = Vector3.Distance(transform.position, player.position);
+
+        // Si está muy lejos, no dispara
+        if (distance > shootRange) return;
+
+        // Cadencia de fuego
+        if (Time.time < nextFireTime) return;
+
+        Shoot();
+        nextFireTime = Time.time + fireRate;
+    }
+    void Shoot()
+    {
+        // Instanciar bala
+        GameObject b = Instantiate(projectilePrefab, firePoint.position, firePoint.rotation);
+
+        // Setear dueño y daño
+        Projectile p = b.GetComponent<Projectile>();
+        p.owner = gameObject;
+        p.damage = projectileDamage;
     }
 
     void FixedUpdate()
     {
         if (dying) return;
 
-        // 🔹 Movimiento manual (no físico)
-        if (currentState == EnemyState.Chase && fixedMoveDelta != Vector3.zero)
+        if (currentState == EnemyState.Chase)
         {
-            transform.position += fixedMoveDelta;
+            // Si el desplazamiento es muy pequeño, no llamar MovePosition
+            if (fixedMoveDelta.sqrMagnitude > 0f && !float.IsNaN(fixedMoveDelta.sqrMagnitude))
+            {
+                // Mover con MovePosition pero limitando la distancia máxima por paso
+                // Esto previene movimientos explosivos si algo sale mal
+                float maxStep = 10f * Time.fixedDeltaTime; // por seguridad, 10 m/s tope (ajustable)
+                float stepMag = fixedMoveDelta.magnitude;
+                Vector3 step = fixedMoveDelta;
+                if (stepMag > maxStep)
+                    step = fixedMoveDelta.normalized * maxStep;
+
+                enemyRb.MovePosition(enemyRb.position + step);
+            }
         }
     }
 
+    // -------------------------
+    //       BILLBOARD
+    // -------------------------
     void UpdateBillboard()
     {
-        if (statusText != null && Camera.main != null)
-        {
-            // 🔹 Mantenerlo sobre la cabeza del enemigo
-            statusText.transform.position = transform.position + uiOffset;
+        if (statusText == null || Camera.main == null) return;
 
-            // 🔹 Rotarlo hacia la cámara
-            Vector3 dir = statusText.transform.position - Camera.main.transform.position;
-            statusText.transform.rotation = Quaternion.LookRotation(dir);
-
-            // 🔹 Actualizar el texto
-            statusText.text = currentState.ToString();
-        }
+        statusText.transform.position = transform.position + uiOffset;
+        Vector3 dir = statusText.transform.position - Camera.main.transform.position;
+        statusText.transform.rotation = Quaternion.LookRotation(dir);
+        statusText.text = currentState.ToString();
     }
 
+    // -------------------------
+    //       DETECCIÓN
+    // -------------------------
     void DetectPlayer()
     {
         if (player == null || enemyData == null) return;
 
-        Vector3 dirToPlayer = (player.position - transform.position).normalized;
+        Vector3 eyes = transform.position + Vector3.up * 1.25f;
+        Vector3 dirToPlayer = (player.position - eyes).normalized;
+
         float angle = Vector3.Angle(transform.forward, dirToPlayer);
-        float distance = Vector3.Distance(transform.position, player.position);
+        float distance = Vector3.Distance(eyes, player.position);
 
         if (angle < enemyData.visionAngle / 2f && distance < enemyData.visionDistance)
         {
-            if (!Physics.Raycast(transform.position + Vector3.up * 0.5f, dirToPlayer, distance, obstacleMask))
+            if (!Physics.Raycast(eyes, dirToPlayer, distance, obstacleMask))
             {
                 EnterAlert();
             }
         }
     }
 
-    void CalculateChaseMovement()
+    // -------------------------
+    //     CHASE + MOVIMIENTO
+    // -------------------------
+    void ChaseLogic()
     {
         if (player == null || enemyData == null)
         {
@@ -119,50 +232,75 @@ public class EnemyController : MonoBehaviour
             return;
         }
 
-        Vector3 dir = player.position - transform.position;
-        dir.y = 0f;
-        float distance = dir.magnitude;
-
-        if (distance > 2f)
-        {
-            Vector3 dirNorm = dir.normalized;
-            Vector3 move = dirNorm * enemyData.moveSpeed * Time.deltaTime;
-            fixedMoveDelta = move;
-
-            // Rotación suave hacia el jugador
-            Quaternion lookRotation = Quaternion.LookRotation(dirNorm);
-            transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * 5f);
-        }
-        else
+        // Dirección horizontal al jugador
+        Vector3 direction = player.position - transform.position;
+        direction.y = 0f;
+        float distance = direction.magnitude;
+        if (distance <= 0.001f)
         {
             fixedMoveDelta = Vector3.zero;
-            Vector3 lookDir = dir;
-            lookDir.y = 0f;
-            if (lookDir != Vector3.zero)
-            {
-                Quaternion lookRotation = Quaternion.LookRotation(lookDir.normalized);
-                transform.rotation = Quaternion.Slerp(transform.rotation, lookRotation, Time.deltaTime * 5f);
-            }
+            return;
         }
-    }
 
+        // Rotación suave hacia el jugador
+        Quaternion targetRot = Quaternion.LookRotation(direction.normalized);
+        transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, 5f * Time.deltaTime);
+
+        // Mantener distancia mínima
+        if (distance <= stopDistance)
+        {
+            fixedMoveDelta = Vector3.zero;
+            return;
+        }
+
+        // ---- velocidad segura ----
+        // Tomamos la velocidad de enemyData, pero la limitamos al max configurado
+        float rawSpeed = enemyData.moveSpeed;
+        float speed = rawSpeed;
+        // Si declaraste public float maxChaseSpeed, úsala; si no existe, 3f por defecto.
+        float maxSpeed = (GetType().GetField("maxChaseSpeed") != null) ? (float)GetType().GetField("maxChaseSpeed").GetValue(this) : 3f;
+        speed = Mathf.Min(speed, maxSpeed);
+
+        // Calculamos la posición objetivo usando MoveTowards (evita overshoot)
+        Vector3 desiredVelocity = direction.normalized * speed; // m/s
+        Vector3 desiredPositionThisFixed = enemyRb.position + desiredVelocity * Time.fixedDeltaTime;
+
+        // fixedMoveDelta es el desplazamiento que aplicaremos en FixedUpdate
+        fixedMoveDelta = desiredPositionThisFixed - enemyRb.position;
+
+        // Debug opcional: línea y log de velocidad aplicada
+        if (GetType().GetField("debugChase") != null && (bool)GetType().GetField("debugChase").GetValue(this))
+        {
+            Debug.DrawLine(enemyRb.position, enemyRb.position + fixedMoveDelta * 10f, Color.cyan, 0.1f);
+            Debug.Log($"[Enemy] moveSpeed raw:{rawSpeed:F2} applied:{speed:F2} fixedDelta:{fixedMoveDelta.magnitude:F3}m");
+        }
+
+        HandleShooting();
+    }
+    
+
+    // -------------------------
+    //       ALERTA GLOBAL
+    // -------------------------
     void EnterAlert()
     {
         if (currentState == EnemyState.Alert || currentState == EnemyState.Chase) return;
 
         currentState = EnemyState.Alert;
-        foreach (EnemyController enemy in FindObjectsOfType<EnemyController>())
-        {
-            enemy.ReceiveAlert();
-        }
 
-        Invoke(nameof(StartChase), 0.5f);
+        foreach (EnemyController enemy in FindObjectsOfType<EnemyController>())
+            enemy.ReceiveAlert();
+
+        Invoke(nameof(StartChase), 0.3f);
     }
 
     public void ReceiveAlert()
     {
-        if (currentState != EnemyState.Chase && currentState != EnemyState.Dead)
-            currentState = EnemyState.Chase;
+        if (currentState == EnemyState.Dead) return;
+
+        currentState = EnemyState.Chase;
+
+        fixedMoveDelta = Vector3.forward * 0.001f; // evitar quedada estática
     }
 
     void StartChase()
@@ -170,6 +308,9 @@ public class EnemyController : MonoBehaviour
         currentState = EnemyState.Chase;
     }
 
+    // -------------------------
+    //         DAÑO
+    // -------------------------
     public void TakeDamage(float dmg)
     {
         if (dying) return;
@@ -179,24 +320,22 @@ public class EnemyController : MonoBehaviour
         lastDamageTime = Time.time;
 
         if (currentHealth <= 0)
-        {
             Die();
-        }
         else
-        {
-            Invoke(nameof(CheckForDeathSilently), 3f);
-        }
+            Invoke(nameof(DelayedAlert), 3f);
     }
 
-    void CheckForDeathSilently()
+    void DelayedAlert()
     {
-        if (currentState != EnemyState.Dead && Time.time - lastDamageTime >= 3f)
-        {
-            foreach (EnemyController enemy in FindObjectsOfType<EnemyController>())
-                enemy.ReceiveAlert();
-        }
+        if (currentState == EnemyState.Dead) return;
+
+        foreach (EnemyController enemy in FindObjectsOfType<EnemyController>())
+            enemy.ReceiveAlert();
     }
 
+    // -------------------------
+    //         MUERTE
+    // -------------------------
     void Die()
     {
         if (dying) return;
@@ -206,22 +345,21 @@ public class EnemyController : MonoBehaviour
         if (statusText != null)
         {
             statusText.text = "Dead";
-
-            // 🔹 Desvincular el cartel al morir, para que se quede flotando
             statusText.transform.SetParent(null);
-            Destroy(statusText.gameObject, 2.0f);
+            Destroy(statusText.gameObject, 2f);
         }
 
-        // 🔹 Apagar la visibilidad del enemigo antes de destruirlo
         foreach (Renderer r in GetComponentsInChildren<Renderer>())
             r.enabled = false;
-
         foreach (Collider c in GetComponentsInChildren<Collider>())
             c.enabled = false;
 
         Destroy(gameObject, 1f);
     }
 
+    // -------------------------
+    //        GIZMOS
+    // -------------------------
     private void OnDrawGizmosSelected()
     {
         if (enemyData == null) return;

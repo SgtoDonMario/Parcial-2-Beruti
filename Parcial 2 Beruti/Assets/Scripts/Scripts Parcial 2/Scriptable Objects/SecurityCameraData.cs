@@ -1,18 +1,23 @@
 using UnityEngine;
 
-[CreateAssetMenu(fileName = "NewSecurityCameraData", menuName = "Enemies/Security Camera Data")]
+[CreateAssetMenu(fileName = "SecurityCameraData", menuName = "Game/Security Camera Data")]
 public class SecurityCameraData : ScriptableObject
 {
-    [Header("Detección")]
-    public float visionDistance = 12f;
-    public float visionAngle = 45f;
+    [Header("Vida")]
+    public float maxHealth = 50f;
 
-    [Header("Rotación")]
-    public float rotationSpeed = 50f;
-    public float leftLimit = -45f;
-    public float rightLimit = 45f;
+    [Header("Rotación Automática")]
+    public float rotationSpeed = 30f;
+    public float rotationAngle = 45f;
     public float pauseTime = 1f;
 
-    [Header("Alertas")]
-    public float alertDelay = 0.2f;
+    [Header("Detección")]
+    public float visionDistance = 12f;
+    public float visionAngle = 60f;
+    public LayerMask obstacleMask;
+    public LayerMask playerMask;
+
+    [Header("UI")]
+    public Vector3 uiOffset = new Vector3(0, 1.5f, 0);
 }
+

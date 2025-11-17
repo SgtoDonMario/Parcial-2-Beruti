@@ -1,103 +1,193 @@
 ﻿using UnityEngine;
+using TMPro;
 
 public class SecurityCamera : MonoBehaviour
 {
-    [Header("Detección")]
-    public float visionDistance = 10f;
-    public float visionAngle = 45f;
-    public LayerMask obstacleMask;
-
-    [Header("Rotación")]
-    public float rotationSpeed = 40f;
-    public float leftLimit = -45f;
-    public float rightLimit = 45f;
-    public float pauseTime = 1f;
+    public enum CameraState { Vigilando, Alerta }
+    public CameraState currentState = CameraState.Vigilando;
 
     [Header("Vida")]
-    public float health = 50f;
+    public float maxHealth = 50f;
+    private float currentHealth;
+    private bool destroyed = false;
 
-    private Transform player;
+    [Header("Rotación Automática")]
+    public float rotationSpeed = 30f;
+    public float rotationAngle = 45f;
+    public float pauseTime = 1f;
+
     private float currentRotation = 0f;
-    private bool rotatingRight = true;
+    private int direction = 1;
     private float pauseTimer = 0f;
+
+    [Header("Detección")]
+    public float visionDistance = 12f;
+    public float visionAngle = 60f;
+    public LayerMask obstacleMask;
+
+    [Header("UI")]
+    public TextMeshPro statusText;
+    private Vector3 uiOffset = new Vector3(0, 1.5f, 0);
+
+    public Transform player;
 
     void Start()
     {
-        player = GameObject.FindGameObjectWithTag("Player").transform;
+        currentHealth = maxHealth;
+
+        if (player == null)
+            player = GameObject.FindGameObjectWithTag("Player")?.transform;
+
+        UpdateStatusText("Vigilando");
     }
 
     void Update()
     {
-        if (player == null)
-            return;
+        if (destroyed) return;
 
-        RotateCamera();
+        UpdateBillboard();
+        ScanMovement();
         DetectPlayer();
     }
 
-    // ----------------------------------------------------------------
-    // ROTACIÓN IZQUIERDA / DERECHA
-    // ----------------------------------------------------------------
-    void RotateCamera()
+    // ROTACIÓN
+    void ScanMovement()
     {
-        if (pauseTimer > 0f)
+        if (currentState == CameraState.Alerta)
+            return; // cuando está en alerta deja de rotar
+
+        if (pauseTimer > 0)
         {
             pauseTimer -= Time.deltaTime;
             return;
         }
 
-        float step = rotationSpeed * Time.deltaTime;
+        float delta = rotationSpeed * Time.deltaTime * direction;
+        currentRotation += delta;
 
-        if (rotatingRight)
-            currentRotation += step;
-        else
-            currentRotation -= step;
+        transform.rotation *= Quaternion.Euler(0, delta, 0);
 
-        transform.localRotation = Quaternion.Euler(0, currentRotation, 0);
-
-        if (currentRotation >= rightLimit)
+        if (Mathf.Abs(currentRotation) >= rotationAngle)
         {
-            rotatingRight = false;
-            pauseTimer = pauseTime;
-        }
-        else if (currentRotation <= leftLimit)
-        {
-            rotatingRight = true;
+            direction *= -1;
+            currentRotation = Mathf.Clamp(currentRotation, -rotationAngle, rotationAngle);
             pauseTimer = pauseTime;
         }
     }
 
-    // ----------------------------------------------------------------
-    // DETECCIÓN DEL PLAYER
-    // ----------------------------------------------------------------
+    // DETECCIÓN
     void DetectPlayer()
     {
+        if (player == null) return;
+
         Vector3 dirToPlayer = (player.position - transform.position).normalized;
-
-        float angle = Vector3.Angle(transform.forward, dirToPlayer);
         float distance = Vector3.Distance(transform.position, player.position);
+        float angle = Vector3.Angle(transform.forward, dirToPlayer);
 
-        if (angle < visionAngle / 2f && distance <= visionDistance)
+        // Dentro del cono de visión
+        if (angle < visionAngle / 2f && distance < visionDistance)
         {
-            // raycast para evitar ver a través de paredes
+            // Sin obstáculos en el medio
             if (!Physics.Raycast(transform.position, dirToPlayer, distance, obstacleMask))
             {
-                Debug.Log("PLAYER DETECTADO por cámara");
-                // aquí llamás a los enemigos para perseguir
+                EnterAlertState();
+                return;
             }
+        }
+
+        // Si no lo ve → vuelve a vigilando
+        if (currentState != CameraState.Alerta)
+            return;
+
+        // Si había estado en alerta pero ya no ve al jugador
+        currentState = CameraState.Vigilando;
+        UpdateStatusText("Vigilando");
+    }
+
+    // ENTRAR EN ALERTA
+    void EnterAlertState()
+    {
+        if (currentState == CameraState.Alerta)
+            return;
+
+        currentState = CameraState.Alerta;
+        UpdateStatusText("ALERTA!");
+
+        AlertEnemies();
+    }
+
+    // ALERTAR A TODOS LOS ENEMIGOS
+    void AlertEnemies()
+    {
+        EnemyController[] enemies = FindObjectsOfType<EnemyController>();
+
+        foreach (EnemyController enemy in enemies)
+        {
+            enemy.ReceiveAlert();
         }
     }
 
-    // ----------------------------------------------------------------
-    // RECIBIR DAÑO Y DESTRUIRSE
-    // ----------------------------------------------------------------
+    // DAÑO
     public void TakeDamage(float dmg)
     {
-        health -= dmg;
+        if (destroyed) return;
 
-        if (health <= 0f)
+        currentHealth -= dmg;
+
+        UpdateStatusText("Damage!");
+
+        if (currentHealth <= 0)
+            DestroyCamera();
+    }
+
+    void DestroyCamera()
+    {
+        destroyed = true;
+
+        UpdateStatusText("OFFLINE");
+
+        if (statusText != null)
         {
-            Destroy(gameObject);
+            statusText.transform.SetParent(null);
+            Destroy(statusText.gameObject, 1.5f);
         }
+
+        foreach (Renderer r in GetComponentsInChildren<Renderer>())
+            r.enabled = false;
+
+        foreach (Collider c in GetComponentsInChildren<Collider>())
+            c.enabled = false;
+
+        Destroy(gameObject, 1f);
+    }
+
+    // BILLBOARD
+    void UpdateBillboard()
+    {
+        if (statusText == null || Camera.main == null) return;
+
+        statusText.transform.position = transform.position + uiOffset;
+
+        Vector3 dir = statusText.transform.position - Camera.main.transform.position;
+        statusText.transform.rotation = Quaternion.LookRotation(dir);
+    }
+
+    void UpdateStatusText(string msg)
+    {
+        if (statusText != null)
+            statusText.text = msg;
+    }
+
+    private void OnDrawGizmosSelected()
+    {
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(transform.position, visionDistance);
+
+        Vector3 leftLimit = Quaternion.Euler(0, -visionAngle / 2f, 0) * transform.forward;
+        Vector3 rightLimit = Quaternion.Euler(0, visionAngle / 2f, 0) * transform.forward;
+
+        Gizmos.color = Color.red;
+        Gizmos.DrawRay(transform.position, leftLimit * visionDistance);
+        Gizmos.DrawRay(transform.position, rightLimit * visionDistance);
     }
 }

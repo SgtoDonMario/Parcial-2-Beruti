@@ -15,6 +15,7 @@ public class PlayerWeapon : MonoBehaviour
     public int magazineSize = 15;
     public int currentAmmo;
     public int extraMagazines = 1;
+    public int startMag = 1;
 
     void Start()
     {
@@ -83,5 +84,11 @@ public class PlayerWeapon : MonoBehaviour
 
         extraMagazines--;
         currentAmmo = magazineSize;                    // Se reemplaza el cargador
+    }
+
+    public void ResetAmmo()
+    {
+        currentAmmo = magazineSize;
+        extraMagazines = startMag;
     }
 }
