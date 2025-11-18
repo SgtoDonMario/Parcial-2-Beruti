@@ -99,5 +99,6 @@ public class PlayerMovement : MonoBehaviour
             isCrouched = false;
         }
     }
+
 }
 

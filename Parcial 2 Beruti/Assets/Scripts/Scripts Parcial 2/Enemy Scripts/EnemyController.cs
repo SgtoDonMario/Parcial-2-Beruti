@@ -14,10 +14,10 @@ public class EnemyController : MonoBehaviour
     public TextMeshPro statusText;
 
     [Header("Patrulla")]
-    public Transform patrolPointA;
-    public Transform patrolPointB;
+    public Transform[] patrolPoints;
     public float patrolSpeed = 2f;
     private Transform patrolTarget;
+    private int patrolIndex = 0;
 
     [Header("Ataque a distancia")]
     public GameObject projectilePrefab;
@@ -60,7 +60,6 @@ public class EnemyController : MonoBehaviour
         enemyRb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
         enemyRb.interpolation = RigidbodyInterpolation.Interpolate;
         enemyRb.mass = rbMass;
-        patrolTarget = patrolPointB; // empieza yendo hacia B
         currentHealth = enemyData != null ? enemyData.maxHealth : 100f;
 
         if (player == null)
@@ -115,10 +114,13 @@ public class EnemyController : MonoBehaviour
     // ---------------------------------
     void PatrolLogic()
     {
-        if (patrolPointA == null || patrolPointB == null) return;
+        if (patrolPoints == null || patrolPoints.Length == 0)
+            return;
 
-        // Dirección hacia el objetivo actual
-        Vector3 direction = patrolTarget.position - transform.position;
+        Transform target = patrolPoints[patrolIndex];
+
+        // Dirección hacia el punto
+        Vector3 direction = target.position - transform.position;
         direction.y = 0f;
 
         // Rotación suave
@@ -128,13 +130,19 @@ public class EnemyController : MonoBehaviour
             transform.rotation = Quaternion.Slerp(transform.rotation, rot, 3f * Time.deltaTime);
         }
 
-        // Movimiento lineal (vector math)
+        // Movimiento
         transform.position += direction.normalized * patrolSpeed * Time.deltaTime;
 
-        // Si llegó al punto, cambiar destino
-        if (Vector3.Distance(transform.position, patrolTarget.position) < 3f)
+        // ¿Llegó al punto?
+        if (Vector3.Distance(transform.position, target.position) < 1.0f)
+        {
+            patrolIndex++;
+
+            // Si llega al final, vuelve al inicio → Ruta circular
+            if (patrolIndex >= patrolPoints.Length)
             {
-            patrolTarget = (patrolTarget == patrolPointA) ? patrolPointB : patrolPointA;
+                patrolIndex = 0;
+            }
         }
     }
     void HandleShooting()
@@ -214,9 +222,16 @@ public class EnemyController : MonoBehaviour
 
         if (angle < enemyData.visionAngle / 2f && distance < enemyData.visionDistance)
         {
-            if (!Physics.Raycast(eyes, dirToPlayer, distance, obstacleMask))
+            RaycastHit hit;
+
+            // Usamos BOTH: obstaculos + jugador
+            if (Physics.Raycast(eyes, dirToPlayer, out hit, distance, obstacleMask | playerMask))
             {
-                EnterAlert();
+                // Si LO PRIMERO que toca el raycast es el jugador, entonces lo ve
+                if (hit.collider.transform == player)
+                {
+                    EnterAlert();
+                }
             }
         }
     }

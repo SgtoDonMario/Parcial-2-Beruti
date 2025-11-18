@@ -21,7 +21,10 @@ public class PlayerWeapon : MonoBehaviour
     {
         currentAmmo = magazineSize; // Empieza con cargador lleno
     }
-
+    public void AddAmmo(int amount)
+    {
+        extraMagazines += amount;
+    }
     void Update()
     {
         if (Input.GetButtonDown("Fire1") && Time.time >= nextFireTime)
